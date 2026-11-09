@@ -1,6 +1,8 @@
 // Тестове оточення: PostgreSQL з ролями як у db-init і Keycloak з realm lad.
 // За замовчуванням усе піднімається в контейнерах (Testcontainers, потрібен лише Docker).
 // Якщо задано TEST_PG_ADMIN_URL / TEST_KEYCLOAK_URL, використовуються вже запущені сервери.
+// Kafka піднімає сам relay.test.ts (лише він її потребує); вже запущений брокер — TEST_KAFKA_BROKERS,
+// пропустити тест зі справжньою Kafka (без Docker) — TEST_KAFKA=off.
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +12,9 @@ import { GenericContainer, Wait } from 'testcontainers';
 import { PostgreSqlContainer } from '@testcontainers/postgresql';
 import type { TestProject } from 'vitest/node';
 import { migrateToLatest } from '../src/db/migrations.js';
+
+/** Той самий образ, що в platform. */
+export const KAFKA_IMAGE = 'apache/kafka:4.3.2';
 
 const ROLE_PASSWORD = 'test-role-pass-123';
 const ROLES = ['tenant_owner', 'tenant_app', 'tenant_relay', 'tenant_maint'] as const;
@@ -127,6 +132,7 @@ export default async function setup(project: TestProject) {
     keycloakUrl = `http://${container.getHost()}:${container.getMappedPort(8080)}/idp`;
   }
   project.provide('keycloak', { url: keycloakUrl, adminPassword: KC_ADMIN_PASSWORD, tenantSecret: TENANT_SECRET });
+  project.provide('kafka', { brokers: process.env.TEST_KAFKA_BROKERS ?? '', enabled: process.env.TEST_KAFKA !== 'off' });
   step(`оточення готове за ${Math.round((Date.now() - started) / 1000)} с, запускаю тести`);
 
   return async () => {
@@ -138,5 +144,6 @@ declare module 'vitest' {
   export interface ProvidedContext {
     pg: { admin: string; owner: string; app: string; relay: string; maint: string };
     keycloak: { url: string; adminPassword: string; tenantSecret: string };
+    kafka: { brokers: string; enabled: boolean };
   }
 }

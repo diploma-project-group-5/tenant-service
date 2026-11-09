@@ -21,6 +21,7 @@ Node 24 · TypeScript 6.0 · Fastify 5 · Kysely + PostgreSQL 16 · jose · Vite
 1. Укладач створюється в Keycloak одним запитом: група `schedulers` (дає роль `scheduler`), атрибут `school_id`, тимчасовий пароль із 16 випадкових символів і обов'язкова зміна пароля при першому вході.
 2. Однією транзакцією в базу пишуться заклад у реєстрі й подія `school.registered` в outbox.
 3. Якщо транзакція не вдалася, користувача в Keycloak видаляємо. Якщо не вдалося й видалення, у лозі буде повідомлення для ручної процедури.
+4. Relay (другий пул з'єднань у тому ж процесі, роль `tenant_relay`) забирає подію з outbox і відправляє в топік `school.registered` з ключем `school_id`. school-service з неї створює порожній профіль закладу. Якщо Kafka недоступна, подія лишається в outbox і піде наступним проходом — реєстрацію це не блокує.
 
 Тимчасовий пароль показується адміну один раз, сервіс його не зберігає й не пише в лог (є тест).
 
@@ -35,7 +36,9 @@ Node 24 · TypeScript 6.0 · Fastify 5 · Kysely + PostgreSQL 16 · jose · Vite
 
 Таблиці належать `tenant_owner`, міграції запускаються окремою командою (`make migrate`), не при старті сервісу. Ролі й базу створює `db-init` у репозиторії `platform`.
 
-> **Тимчасово до появи пакета `@lad/db`.** `withSchool` і запис в outbox поки живуть у `src/db/index.ts`. Коли пакет з'явиться, вони замінюються імпортом з нього, а міграція outbox звіряється з його схемою. Відправлення подій з outbox у Kafka (relay) — теж частина `@lad/db`, у цьому сервісі його немає.
+Щоденна чистка (роль `tenant_maint`, третій пул) видаляє надіслані рядки outbox старші за 7 днів. Ненадіслані не видаляються ніколи.
+
+> **Тимчасово до появи пакета `@lad/db`.** `withSchool`, запис в outbox і relay поки живуть у `src/db` і `src/kafka` — той самий код, що в school-service і timetable-service. Коли пакет з'явиться, вони замінюються імпортом з нього.
 
 ## Локальна розробка
 
@@ -58,7 +61,7 @@ Admin API Keycloak сервіс викликає **напряму** (`KEYCLOAK_U
 make test
 ```
 
-Vitest сам піднімає PostgreSQL 16.15 і Keycloak 26.8.1 у контейнерах (Testcontainers) — потрібен лише запущений Docker. Keycloak імпортує `test/fixtures/lad-realm.json` — копію realm з `platform`; CI перевіряє, що копія не розійшлася з `platform/develop`.
+Vitest сам піднімає PostgreSQL 16.15, Keycloak 26.8.1 і Kafka 4.3.2 у контейнерах (Testcontainers) — потрібен лише запущений Docker. Без Docker тест зі справжньою Kafka пропускається з `TEST_KAFKA=off`; уже запущений брокер — `TEST_KAFKA_BROKERS=localhost:29092`. Keycloak імпортує `test/fixtures/lad-realm.json` — копію realm з `platform`; CI перевіряє, що копія не розійшлася з `platform/develop`.
 
 | Файл | Що перевіряє |
 |---|---|
@@ -66,6 +69,7 @@ Vitest сам піднімає PostgreSQL 16.15 і Keycloak 26.8.1 у конте
 | `test/schools.test.ts` | реєстрація, outbox і конверт події, нормалізація логіна, 409, валідація, пароль не в лозі, відкат користувача Keycloak |
 | `test/db.test.ts` | RLS на outbox, права ролей, відсутність BYPASSRLS, міграції up/down |
 | `test/keycloak.test.ts` | клієнт admin API на справжньому Keycloak, перевірка JWT за справжнім JWKS, повна реєстрація через HTTP |
+| `test/relay.test.ts` | relay outbox → Kafka: топік, ключ, конверт для school-service; повтор після збою Kafka; без подвійної відправки двома relay; цикл і зупинка; щоденна чистка; справжня Kafka |
 | `test/units.test.ts` | тимчасовий пароль, конфігурація |
 
 Покриття: поріг 90% рядків і функцій, 80% гілок — нижче CI не пропустить.
