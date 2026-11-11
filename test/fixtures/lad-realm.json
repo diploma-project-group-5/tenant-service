@@ -1,6 +1,7 @@
 {
   "realm": "lad",
   "displayName": "Лад",
+  "loginTheme": "lad",
   "enabled": true,
   "sslRequired": "external",
   "registrationAllowed": false,
