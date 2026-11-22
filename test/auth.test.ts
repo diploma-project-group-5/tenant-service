@@ -78,6 +78,39 @@ describe('доступ до /api/v1/tenant/schools', () => {
   });
 });
 
+describe('спершу автентифікація, потім тіло (розділ 07)', () => {
+  test('анонім з некоректним тілом → 401, а не 400 з описом схеми', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/tenant/schools',
+      payload: { unexpected: 'field' },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toMatchObject({ code: 'unauthorized' });
+    expect(res.body).not.toContain('additionalProperties');
+  });
+
+  test('анонім з битим JSON → 401', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/tenant/schools',
+      headers: { 'content-type': 'application/json' },
+      payload: '{"name": ',
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  test('укладач з некоректним тілом → 403, тіло не розбирається', async () => {
+    const res = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/v1/tenant/schools',
+      headers: { authorization: `Bearer ${await ctx.tokens.scheduler()}` },
+      payload: { unexpected: 'field' },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+});
+
 describe('інше', () => {
   test('битий JSON у тілі → 400 problem+json', async () => {
     const res = await ctx.app.inject({
