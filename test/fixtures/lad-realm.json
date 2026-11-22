@@ -15,7 +15,7 @@
     "en"
   ],
   "defaultLocale": "uk",
-  "passwordPolicy": "length(10) and maxLength(128) and notUsername",
+  "passwordPolicy": "length(10) and maxLength(128) and notUsername and passwordHistory(1)",
   "bruteForceProtected": true,
   "permanentLockout": false,
   "failureFactor": 5,
@@ -27,6 +27,9 @@
   "accessTokenLifespan": 900,
   "ssoSessionIdleTimeout": 28800,
   "ssoSessionMaxLifespan": 28800,
+  "offlineSessionIdleTimeout": 28800,
+  "offlineSessionMaxLifespanEnabled": true,
+  "offlineSessionMaxLifespan": 28800,
   "roles": {
     "realm": [
       {
@@ -65,6 +68,15 @@
       "webOrigins": [
         "+"
       ],
+      "defaultClientScopes": [
+        "acr",
+        "basic",
+        "email",
+        "profile",
+        "roles",
+        "web-origins"
+      ],
+      "optionalClientScopes": [],
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "+"

@@ -21,6 +21,13 @@ export interface AppDeps {
 /** Шлюз не зрізає префікс: маршрути оголошено разом з /api/v1/tenant. */
 export const API_PREFIX = '/api/v1/tenant';
 
+/**
+ * X-Request-Id клієнта стає correlation_id події, а envelope contracts дозволяє до 128 символів.
+ * Довший заголовок чи з іншими символами замінюється новим uuid: інакше подія порушила б схему,
+ * а в логи потрапляв би довільний текст від анонімного клієнта.
+ */
+export const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+
 const Uuid = Type.String({ format: 'uuid' });
 
 const SchoolRegistration = Type.Object(
@@ -50,8 +57,12 @@ export function buildApp(deps: AppDeps): FastifyInstance {
       level: process.env.LOG_LEVEL ?? 'info',
       redact: ['req.headers.authorization', 'temporary_password', '*.temporary_password'],
     },
-    requestIdHeader: 'x-request-id',
-    genReqId: () => randomUUID(),
+    // Заголовок читає genReqId: з requestIdHeader Fastify взяв би його без перевірки.
+    requestIdHeader: false,
+    genReqId: (req) => {
+      const header = req.headers['x-request-id'];
+      return typeof header === 'string' && REQUEST_ID_PATTERN.test(header) ? header : randomUUID();
+    },
   }).withTypeProvider<TypeBoxTypeProvider>();
 
   app.setErrorHandler((err, request, reply) => {
@@ -78,12 +89,14 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     }
   });
 
+  // onRequest, а не preHandler: спершу автентифікація, потім розбір і валідація тіла (розділ 07).
+  // Інакше анонім із некоректним тілом отримав би 400 з описом схеми замість 401.
   const sysadminOnly = requireRole(deps.verifyToken, 'sysadmin');
 
   app.post(
     `${API_PREFIX}/schools`,
     {
-      preHandler: sysadminOnly,
+      onRequest: sysadminOnly,
       schema: { body: SchoolRegistration, response: { 201: SchoolRegistered } },
     },
     async (request, reply) => {
@@ -104,7 +117,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
 
   app.get(
     `${API_PREFIX}/schools`,
-    { preHandler: sysadminOnly, schema: { response: { 200: Type.Array(SchoolListItem) } } },
+    { onRequest: sysadminOnly, schema: { response: { 200: Type.Array(SchoolListItem) } } },
     async () => listSchools(deps.db),
   );
 

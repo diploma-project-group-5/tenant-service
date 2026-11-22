@@ -21,14 +21,41 @@ afterAll(async () => {
   await relayDb.destroy();
 });
 
-async function register(payload: unknown) {
+async function register(payload: unknown, requestId = 'req-test-1') {
   return ctx.app.inject({
     method: 'POST',
     url: '/api/v1/tenant/schools',
-    headers: { authorization: `Bearer ${await ctx.tokens.sysadmin()}`, 'x-request-id': 'req-test-1' },
+    headers: { authorization: `Bearer ${await ctx.tokens.sysadmin()}`, 'x-request-id': requestId },
     payload: payload as object,
   });
 }
+
+/** correlation_id події school.registered щойно зареєстрованого закладу. */
+async function correlationOf(schoolId: string): Promise<string> {
+  const row = await relayDb.selectFrom('outbox').selectAll().where('school_id', '=', schoolId).executeTakeFirstOrThrow();
+  return (row.payload as { correlation_id: string }).correlation_id;
+}
+
+describe('X-Request-Id → correlation_id (envelope: до 128 символів)', () => {
+  test('допустимий заголовок переходить у подію й у відповідь без змін', async () => {
+    const res = await register({ name: 'Ліцей', login: uniqueLogin() }, 'req-OK_1.2:3');
+    expect(res.statusCode).toBe(201);
+    expect(await correlationOf(res.json().school_id)).toBe('req-OK_1.2:3');
+  });
+
+  test('заголовок довший за 128 символів замінюється новим uuid', async () => {
+    const res = await register({ name: 'Ліцей', login: uniqueLogin() }, 'x'.repeat(200));
+    expect(res.statusCode).toBe(201);
+    const id = await correlationOf(res.json().school_id);
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  });
+
+  test('заголовок з пробілами чи іншими символами замінюється новим uuid', async () => {
+    const res = await register({ name: 'Ліцей', login: uniqueLogin() }, 'req <script> 1');
+    expect(res.statusCode).toBe(201);
+    expect(await correlationOf(res.json().school_id)).not.toContain('<');
+  });
+});
 
 describe('POST /api/v1/tenant/schools', () => {
   test('201: school_id, логін, тимчасовий пароль; no-store', async () => {

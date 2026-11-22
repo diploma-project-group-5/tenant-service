@@ -38,7 +38,7 @@ declare module 'fastify' {
   }
 }
 
-/** preHandler: лише токен web з потрібною роллю. Без токена або з поганим — 401, без ролі — 403. */
+/** Хук onRequest: лише токен web з потрібною роллю. Без токена або з поганим — 401, без ролі — 403. */
 export function requireRole(verify: TokenVerifier, role: Role) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const header = request.headers.authorization;
