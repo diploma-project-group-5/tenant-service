@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+    branches: [develop, main, "feat/**", "fix/**", "test/**"]
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      # Testcontainers піднімає PostgreSQL 16.15 і Keycloak 26.8.1 через Docker раннера.
+      - run: npm test
+      - run: npm run build
+      - name: Realm у тестах збігається з platform
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/diploma-project-group-5/platform/develop/keycloak/realm/lad-realm.json \
+            | diff -u - test/fixtures/lad-realm.json \
+            || { echo "::error::test/fixtures/lad-realm.json відрізняється від platform/develop — скопіюйте свіжий файл"; exit 1; }
+      - name: Docker-образ збирається
+        run: docker build -t tenant-service:ci .
